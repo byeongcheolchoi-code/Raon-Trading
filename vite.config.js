@@ -7,10 +7,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon-32.png', 'apple-touch-icon.png', 'icon-source.svg'],
       manifest: {
-        name: '레버리지 매매일지',
+        name: '비트코인 매매일지',
         short_name: '매매일지',
-        description: '매수단가·매도단가·비중·배율·마진 모드를 기록하고 승률·손익비·계좌손익을 추적하는 트레이딩 저널',
-        theme_color: '#2a78d6',
+        description: '매수단가·매도단가·비중·배율·마진 모드를 기록하고 승률·손익비·계좌손익을 추적하는 비트코인 매매일지',
+        theme_color: '#F7931A',
         background_color: '#f9f9f7',
         display: 'standalone',
         start_url: '/',

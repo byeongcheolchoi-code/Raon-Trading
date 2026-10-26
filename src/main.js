@@ -14,9 +14,9 @@ const state = {
   currentSide: 'long',
   currentMargin: 'cross',
   editingId: null,
-  chartPeriod: 'all',
-  chartFrom: '',
-  chartTo: '',
+  period: 'all',
+  periodFrom: '',
+  periodTo: '',
   deferredInstallPrompt: null,
 };
 
@@ -130,7 +130,7 @@ function renderAuthScreen() {
   root.innerHTML = `
     <div class="auth-wrap">
       <div class="auth-card">
-        <h1>◆ 레버리지 매매일지</h1>
+        <h1>₿ 비트코인 매매일지</h1>
         <p class="sub">로그인하면 거래 기록이 안전하게 저장됩니다.</p>
         <div class="auth-field">
           <label for="authEmail">이메일</label>
@@ -175,9 +175,9 @@ function renderApp() {
   <div class="app">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark">◆</span>
+        <span class="brand-mark">₿</span>
         <div>
-          <h1>레버리지 매매일지</h1>
+          <h1>비트코인 매매일지</h1>
           <p class="brand-sub">포지션 기록 · 승률 · 손익비 추적</p>
         </div>
       </div>
@@ -192,6 +192,22 @@ function renderApp() {
       </div>
     </header>
 
+    <section class="period-bar">
+      <span class="period-label">기간</span>
+      <div class="period-pills" id="periodPills">
+        <button type="button" data-period="all" class="active">전체</button>
+        <button type="button" data-period="week">이번주</button>
+        <button type="button" data-period="month">이번달</button>
+        <button type="button" data-period="7d">7일</button>
+        <button type="button" data-period="30d">30일</button>
+        <button type="button" data-period="90d">90일</button>
+        <button type="button" data-period="custom">기간 설정</button>
+      </div>
+      <div class="period-custom-range" id="periodCustomRange" hidden>
+        <input type="date" id="periodFromInput"><span>~</span><input type="date" id="periodToInput">
+      </div>
+    </section>
+
     <section class="stats-grid">
       <div class="stat-tile"><div class="stat-label">승률</div><div class="stat-value" id="statWinRate">—</div><div class="stat-sub" id="statWinRateSub">거래 없음</div></div>
       <div class="stat-tile"><div class="stat-label">손익비</div><div class="stat-value" id="statPLRatio">—</div><div class="stat-sub" id="statPLRatioSub">평균익 / 평균손</div></div>
@@ -201,17 +217,6 @@ function renderApp() {
 
     <section class="chart-card">
       <div class="chart-head"><h2>누적 손익</h2><span class="chart-sub" id="chartRange">거래 없음</span></div>
-      <div class="period-pills" id="periodPills">
-        <button type="button" data-period="all" class="active">전체</button>
-        <button type="button" data-period="7d">7일</button>
-        <button type="button" data-period="30d">30일</button>
-        <button type="button" data-period="90d">90일</button>
-        <button type="button" data-period="month">이번달</button>
-        <button type="button" data-period="custom">기간 설정</button>
-      </div>
-      <div class="period-custom-range" id="periodCustomRange" hidden>
-        <input type="date" id="periodFromInput"><span>~</span><input type="date" id="periodToInput">
-      </div>
       <div class="chart-wrap">
         <svg id="pnlChart" viewBox="0 0 760 220" preserveAspectRatio="none" role="img" aria-label="누적 손익 곡선"></svg>
         <div class="chart-empty" id="chartEmpty">첫 거래를 입력하면 손익 곡선이 여기에 표시됩니다</div>
@@ -460,8 +465,39 @@ function wireApp() {
     els.previewValue.className = 'mono ' + (r.pnlPct > 0 ? 'good' : r.pnlPct < 0 ? 'bad' : '');
   }
 
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function toDateStr(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+
+  function getPeriodTrades() {
+    const mode = state.period;
+    if (mode === 'all') return state.trades;
+    const today = new Date();
+    if (mode === 'week') {
+      const day = today.getDay(); // 0=Sun..6=Sat
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      const monday = new Date(today); monday.setDate(today.getDate() + diffToMonday);
+      const fromStr = toDateStr(monday);
+      return state.trades.filter((t) => t.date >= fromStr);
+    }
+    if (mode === 'month') {
+      const fromStr = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-01`;
+      return state.trades.filter((t) => t.date >= fromStr);
+    }
+    if (mode === '7d' || mode === '30d' || mode === '90d') {
+      const days = mode === '7d' ? 7 : mode === '30d' ? 30 : 90;
+      const from = new Date(today); from.setDate(from.getDate() - (days - 1));
+      const fromStr = toDateStr(from);
+      return state.trades.filter((t) => t.date >= fromStr);
+    }
+    if (mode === 'custom') {
+      const from = state.periodFrom, to = state.periodTo;
+      return state.trades.filter((t) => (!from || t.date >= from) && (!to || t.date <= to));
+    }
+    return state.trades;
+  }
+
   function renderStats() {
-    const s = computeStats(state.trades, state.capital);
+    const s = computeStats(getPeriodTrades(), state.capital);
     if (!s) {
       els.statWinRate.textContent = '—'; els.statWinRate.className = 'stat-value';
       els.statWinRateSub.textContent = '거래 없음';
@@ -473,7 +509,7 @@ function wireApp() {
     }
     els.statWinRate.textContent = (s.winRate * 100).toFixed(1) + '%';
     els.statWinRate.className = 'stat-value';
-    els.statWinRateSub.textContent = `${s.wins}승 ${s.losses}패 (전체 ${s.total}건)`;
+    els.statWinRateSub.textContent = `${s.wins}승 ${s.losses}패 (${s.total}건)`;
     els.statPLRatio.textContent = isFinite(s.plRatio) ? s.plRatio.toFixed(2) : '∞';
     els.statPLRatioSub.textContent = `평균익 ${fmtPct(s.avgWin)} / 평균손 ${fmtPct(-s.avgLoss)}`;
     els.statPnlAmount.textContent = fmtWon(s.cumAmount);
@@ -483,56 +519,33 @@ function wireApp() {
     els.statTotalSub.textContent = `승 ${s.wins} · 패 ${s.losses}`;
   }
 
-  function pad2(n) { return String(n).padStart(2, '0'); }
-  function toDateStr(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
-
-  function getChartTrades() {
-    const mode = state.chartPeriod;
-    if (mode === 'all') return state.trades;
-    const today = new Date();
-    if (mode === '7d' || mode === '30d' || mode === '90d') {
-      const days = mode === '7d' ? 7 : mode === '30d' ? 30 : 90;
-      const from = new Date(today); from.setDate(from.getDate() - (days - 1));
-      const fromStr = toDateStr(from);
-      return state.trades.filter((t) => t.date >= fromStr);
-    }
-    if (mode === 'month') {
-      const fromStr = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-01`;
-      return state.trades.filter((t) => t.date >= fromStr);
-    }
-    if (mode === 'custom') {
-      const from = state.chartFrom, to = state.chartTo;
-      return state.trades.filter((t) => (!from || t.date >= from) && (!to || t.date <= to));
-    }
-    return state.trades;
-  }
-
   els.periodPills.addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-period]');
     if (!btn) return;
-    state.chartPeriod = btn.dataset.period;
+    state.period = btn.dataset.period;
     els.periodPills.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
-    if (state.chartPeriod === 'custom') {
+    if (state.period === 'custom') {
       els.periodCustomRange.hidden = false;
-      if (!state.chartFrom) {
+      if (!state.periodFrom) {
         const from = new Date(); from.setDate(from.getDate() - 29);
-        state.chartFrom = toDateStr(from);
-        els.periodFromInput.value = state.chartFrom;
+        state.periodFrom = toDateStr(from);
+        els.periodFromInput.value = state.periodFrom;
       }
-      if (!state.chartTo) {
-        state.chartTo = toDateStr(new Date());
-        els.periodToInput.value = state.chartTo;
+      if (!state.periodTo) {
+        state.periodTo = toDateStr(new Date());
+        els.periodToInput.value = state.periodTo;
       }
     } else {
       els.periodCustomRange.hidden = true;
     }
+    renderStats();
     renderChart();
   });
-  els.periodFromInput.addEventListener('change', () => { state.chartFrom = els.periodFromInput.value; renderChart(); });
-  els.periodToInput.addEventListener('change', () => { state.chartTo = els.periodToInput.value; renderChart(); });
+  els.periodFromInput.addEventListener('change', () => { state.periodFrom = els.periodFromInput.value; renderStats(); renderChart(); });
+  els.periodToInput.addEventListener('change', () => { state.periodTo = els.periodToInput.value; renderStats(); renderChart(); });
 
   function renderChart() {
-    const asc = sortedAsc(getChartTrades());
+    const asc = sortedAsc(getPeriodTrades());
     const svg = els.svg;
     svg.innerHTML = '';
     if (asc.length === 0) {
