@@ -8,10 +8,12 @@ const root = document.getElementById('app');
 const state = {
   session: null,
   trades: [],
+  watchlist: [],
   capital: DEFAULT_CAPITAL,
   loading: true,
   currentSide: 'long',
   currentMargin: 'cross',
+  editingId: null,
   deferredInstallPrompt: null,
 };
 
@@ -79,6 +81,10 @@ async function loadData() {
 
   const { data: tradeRows, error } = await supabase.from('trades').select('*').eq('user_id', uid).order('date', { ascending: true });
   if (!error) state.trades = tradeRows || [];
+
+  const { data: wlRows } = await supabase.from('watchlist').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+  state.watchlist = wlRows || [];
+
   refreshView();
 
   if (tradesChannel) supabase.removeChannel(tradesChannel);
@@ -94,6 +100,12 @@ async function refetchTrades() {
   const uid = state.session.user.id;
   const { data, error } = await supabase.from('trades').select('*').eq('user_id', uid).order('date', { ascending: true });
   if (!error) { state.trades = data || []; refreshView(); }
+}
+
+async function refetchWatchlist() {
+  const uid = state.session.user.id;
+  const { data, error } = await supabase.from('watchlist').select('*').eq('user_id', uid).order('created_at', { ascending: true });
+  if (!error) { state.watchlist = data || []; refreshView(); }
 }
 
 // ---------- render ----------
@@ -171,6 +183,7 @@ function renderApp() {
           <label for="capitalInput">초기자본</label>
           <div class="capital-field"><span>₩</span><input id="capitalInput" type="text" inputmode="numeric"></div>
         </div>
+        <button type="button" class="ghost-btn" id="watchlistBtn">☆ 관심종목</button>
         <button type="button" class="install-btn" id="installBtn" hidden>⬇️ 앱 설치</button>
         <button type="button" class="ghost-btn" id="signOutBtn">로그아웃</button>
       </div>
@@ -195,6 +208,7 @@ function renderApp() {
     <section class="grid-main">
       <div class="entry-card">
         <h2>거래 입력</h2>
+        <div class="editing-banner" id="editingBanner" hidden>✏️ 거래를 수정하는 중입니다</div>
         <form id="tradeForm">
           <div class="field-row">
             <div class="field"><label for="dateInput">날짜</label><input id="dateInput" type="date" required></div>
@@ -228,7 +242,10 @@ function renderApp() {
           <div class="field"><label for="memoInput">메모 (선택)</label><textarea id="memoInput" placeholder="진입 이유, 전략, 복기 등"></textarea></div>
           <div class="preview-box"><span>예상 손익</span><strong id="previewValue" class="mono">—</strong></div>
           <div class="form-error" id="formError"></div>
-          <button class="submit-btn" id="submitBtn" type="submit">거래 저장</button>
+          <div class="form-actions">
+            <button class="submit-btn" id="submitBtn" type="submit">거래 저장</button>
+            <button class="cancel-edit-btn" id="cancelEditBtn" type="button" hidden>취소</button>
+          </div>
         </form>
       </div>
 
@@ -243,6 +260,23 @@ function renderApp() {
         <div class="table-empty" id="tableEmpty">아직 입력된 거래가 없습니다. 왼쪽 폼에서 첫 거래를 기록해보세요.</div>
       </div>
     </section>
+  </div>
+
+  <div class="watchlist-overlay" id="watchlistOverlay" hidden>
+    <div class="watchlist-panel" role="dialog" aria-modal="true" aria-labelledby="watchlistTitle">
+      <div class="watchlist-head">
+        <h2 id="watchlistTitle">☆ 관심종목</h2>
+        <button type="button" class="watchlist-close" id="watchlistClose" aria-label="닫기">✕</button>
+      </div>
+      <form class="watchlist-add-row" id="wlAddForm">
+        <input id="wlSymbolInput" type="text" placeholder="예: BTCUSDT" maxlength="20">
+        <button type="submit">추가</button>
+      </form>
+      <div class="watchlist-msg" id="watchlistMsg"></div>
+      <div class="watchlist-list" id="watchlistList"></div>
+      <div class="watchlist-empty" id="watchlistEmpty">아직 등록한 관심종목이 없습니다</div>
+      <p class="watchlist-hint">종목을 클릭하면 거래 입력 폼에 바로 채워집니다.</p>
+    </div>
   </div>`;
 
   wireApp();
@@ -281,6 +315,16 @@ function wireApp() {
     tableEmpty: document.getElementById('tableEmpty'),
     sideCtrl: document.getElementById('sideCtrl'),
     marginCtrl: document.getElementById('marginCtrl'),
+    editingBanner: document.getElementById('editingBanner'),
+    cancelEditBtn: document.getElementById('cancelEditBtn'),
+    watchlistBtn: document.getElementById('watchlistBtn'),
+    watchlistOverlay: document.getElementById('watchlistOverlay'),
+    watchlistClose: document.getElementById('watchlistClose'),
+    wlAddForm: document.getElementById('wlAddForm'),
+    wlSymbolInput: document.getElementById('wlSymbolInput'),
+    watchlistMsg: document.getElementById('watchlistMsg'),
+    watchlistList: document.getElementById('watchlistList'),
+    watchlistEmpty: document.getElementById('watchlistEmpty'),
   };
 
   if (state.deferredInstallPrompt) els.installBtn.hidden = false;
@@ -296,6 +340,60 @@ function wireApp() {
     if (tradesChannel) { supabase.removeChannel(tradesChannel); tradesChannel = null; }
     await supabase.auth.signOut();
   });
+
+  function openWatchlist() { els.watchlistOverlay.hidden = false; els.watchlistMsg.textContent = ''; els.wlSymbolInput.focus(); }
+  function closeWatchlist() { els.watchlistOverlay.hidden = true; }
+  els.watchlistBtn.addEventListener('click', openWatchlist);
+  els.watchlistClose.addEventListener('click', closeWatchlist);
+  els.watchlistOverlay.addEventListener('click', (e) => { if (e.target === els.watchlistOverlay) closeWatchlist(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !els.watchlistOverlay.hidden) closeWatchlist(); });
+
+  els.wlAddForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const symbol = (els.wlSymbolInput.value || '').trim().toUpperCase();
+    els.watchlistMsg.textContent = '';
+    if (!symbol) return;
+    const { error } = await supabase.from('watchlist').insert({ user_id: state.session.user.id, symbol });
+    if (error) {
+      els.watchlistMsg.textContent = error.code === '23505' ? '이미 추가된 종목입니다.' : '추가 실패: ' + error.message;
+      return;
+    }
+    els.wlSymbolInput.value = '';
+    refetchWatchlist();
+  });
+
+  function renderWatchlist() {
+    const list = state.watchlist;
+    els.watchlistEmpty.hidden = list.length !== 0;
+    els.watchlistList.innerHTML = '';
+    list.forEach((w) => {
+      const row = document.createElement('div');
+      row.className = 'watchlist-item';
+      const useBtn = document.createElement('button');
+      useBtn.className = 'wl-symbol';
+      useBtn.type = 'button';
+      useBtn.textContent = w.symbol;
+      useBtn.addEventListener('click', () => {
+        els.symbolInput.value = w.symbol;
+        closeWatchlist();
+        els.entryInput.focus();
+      });
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'wl-remove';
+      removeBtn.type = 'button';
+      removeBtn.textContent = '✕';
+      removeBtn.setAttribute('aria-label', `${w.symbol} 삭제`);
+      removeBtn.addEventListener('click', async () => {
+        removeBtn.disabled = true;
+        const { error } = await supabase.from('watchlist').delete().eq('id', w.id);
+        if (error) { removeBtn.disabled = false; els.watchlistMsg.textContent = '삭제 실패: ' + error.message; }
+        else refetchWatchlist();
+      });
+      row.appendChild(useBtn);
+      row.appendChild(removeBtn);
+      els.watchlistList.appendChild(row);
+    });
+  }
 
   function setToday() {
     const d = new Date();
@@ -499,14 +597,55 @@ function wireApp() {
       td(`<span class="num ${r.pnlAmount > 0 ? 'good' : r.pnlAmount < 0 ? 'bad' : ''}">${fmtWon(r.pnlAmount)}</span>`);
       td(r.pnlPct > 1e-12 ? '<span class="pill long">승</span>' : r.pnlPct < -1e-12 ? '<span class="pill short">패</span>' : '<span class="pill margin">무</span>');
       const actionTd = document.createElement('td');
+      const editBtn = document.createElement('button');
+      editBtn.className = 'edit-btn'; editBtn.type = 'button'; editBtn.textContent = '수정';
+      editBtn.addEventListener('click', () => startEdit(t));
       const delBtn = document.createElement('button');
-      delBtn.className = 'del-btn'; delBtn.textContent = '삭제'; delBtn.dataset.id = t.id;
+      delBtn.className = 'del-btn'; delBtn.type = 'button'; delBtn.textContent = '삭제'; delBtn.dataset.id = t.id;
       delBtn.addEventListener('click', () => handleDeleteClick(delBtn, t.id));
+      actionTd.appendChild(editBtn);
       actionTd.appendChild(delBtn);
       tr.appendChild(actionTd);
       els.tradeTbody.appendChild(tr);
     });
   }
+
+  function startEdit(trade) {
+    state.editingId = trade.id;
+    els.dateInput.value = trade.date;
+    els.symbolInput.value = trade.symbol;
+    els.entryInput.value = trade.entry;
+    els.exitInput.value = trade.exit;
+    els.weightInput.value = trade.weight;
+    els.leverageInput.value = trade.leverage;
+    els.leverageRange.value = trade.leverage;
+    els.memoInput.value = trade.memo || '';
+    state.currentSide = trade.side;
+    state.currentMargin = trade.margin;
+    els.sideCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.side === trade.side));
+    els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.margin === trade.margin));
+    els.editingBanner.hidden = false;
+    els.cancelEditBtn.hidden = false;
+    els.submitBtn.textContent = '거래 수정';
+    updatePreview();
+    els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelEdit() {
+    state.editingId = null;
+    els.form.reset();
+    setToday();
+    state.currentSide = 'long'; state.currentMargin = 'cross';
+    els.sideCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.side === 'long'));
+    els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.margin === 'cross'));
+    els.leverageRange.value = 1; els.leverageInput.value = 1;
+    els.editingBanner.hidden = true;
+    els.cancelEditBtn.hidden = true;
+    els.submitBtn.textContent = '거래 저장';
+    els.formError.textContent = '';
+    updatePreview();
+  }
+  els.cancelEditBtn.addEventListener('click', cancelEdit);
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -528,7 +667,7 @@ function wireApp() {
     }
   }
 
-  function renderAll() { renderStats(); renderChart(); renderTable(); updatePreview(); }
+  function renderAll() { renderStats(); renderChart(); renderTable(); renderWatchlist(); updatePreview(); }
 
   function formatCapitalDisplay() { els.capitalInput.value = state.capital.toLocaleString('ko-KR'); }
   els.capitalInput.addEventListener('focus', () => { els.capitalInput.value = String(state.capital); });
@@ -563,17 +702,15 @@ function wireApp() {
     if (isNaN(data.weight) || data.weight < 0 || data.weight > 100) { els.formError.textContent = '비중은 0~100 사이여야 합니다.'; return; }
     if (isNaN(data.leverage) || data.leverage < 0 || data.leverage > 100) { els.formError.textContent = '배율은 0~100 사이여야 합니다.'; return; }
 
-    els.submitBtn.disabled = true; els.submitBtn.textContent = '저장 중…';
-    const { error } = await supabase.from('trades').insert(data);
-    els.submitBtn.disabled = false; els.submitBtn.textContent = '거래 저장';
-    if (error) { els.formError.textContent = '저장 실패: ' + error.message; return; }
+    const isEditing = !!state.editingId;
+    els.submitBtn.disabled = true; els.submitBtn.textContent = isEditing ? '수정 중…' : '저장 중…';
+    const { error } = isEditing
+      ? await supabase.from('trades').update(data).eq('id', state.editingId)
+      : await supabase.from('trades').insert(data);
+    els.submitBtn.disabled = false;
+    if (error) { els.submitBtn.textContent = isEditing ? '거래 수정' : '거래 저장'; els.formError.textContent = (isEditing ? '수정 실패: ' : '저장 실패: ') + error.message; return; }
 
-    els.form.reset(); setToday();
-    state.currentSide = 'long'; state.currentMargin = 'cross';
-    els.sideCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.side === 'long'));
-    els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.margin === 'cross'));
-    els.leverageRange.value = 1; els.leverageInput.value = 1;
-    updatePreview();
+    cancelEdit();
     refetchTrades();
   });
 
