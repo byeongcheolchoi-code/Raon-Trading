@@ -3,9 +3,12 @@ export function calcTrade(t, capital) {
   const entry = Number(t.entry), exit = Number(t.exit);
   const priceChangePct = entry > 0 ? (dir * (exit - entry)) / entry : 0;
   const leveragedPct = priceChangePct * Number(t.leverage);
-  const pnlPct = leveragedPct * (Number(t.weight) / 100);
-  const pnlAmount = capital * pnlPct;
-  return { priceChangePct, leveragedPct, pnlPct, pnlAmount };
+  const grossPnlPct = leveragedPct * (Number(t.weight) / 100);
+  const grossPnlAmount = capital * grossPnlPct;
+  const fee = Number(t.fee) || 0;
+  const pnlAmount = grossPnlAmount - fee;
+  const pnlPct = capital > 0 ? pnlAmount / capital : 0;
+  return { priceChangePct, leveragedPct, grossPnlPct, grossPnlAmount, fee, pnlAmount, pnlPct };
 }
 
 export function computeStats(trades, capital) {

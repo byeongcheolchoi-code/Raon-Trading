@@ -14,6 +14,9 @@ const state = {
   currentSide: 'long',
   currentMargin: 'cross',
   editingId: null,
+  chartPeriod: 'all',
+  chartFrom: '',
+  chartTo: '',
   deferredInstallPrompt: null,
 };
 
@@ -198,6 +201,17 @@ function renderApp() {
 
     <section class="chart-card">
       <div class="chart-head"><h2>누적 손익</h2><span class="chart-sub" id="chartRange">거래 없음</span></div>
+      <div class="period-pills" id="periodPills">
+        <button type="button" data-period="all" class="active">전체</button>
+        <button type="button" data-period="7d">7일</button>
+        <button type="button" data-period="30d">30일</button>
+        <button type="button" data-period="90d">90일</button>
+        <button type="button" data-period="month">이번달</button>
+        <button type="button" data-period="custom">기간 설정</button>
+      </div>
+      <div class="period-custom-range" id="periodCustomRange" hidden>
+        <input type="date" id="periodFromInput"><span>~</span><input type="date" id="periodToInput">
+      </div>
       <div class="chart-wrap">
         <svg id="pnlChart" viewBox="0 0 760 220" preserveAspectRatio="none" role="img" aria-label="누적 손익 곡선"></svg>
         <div class="chart-empty" id="chartEmpty">첫 거래를 입력하면 손익 곡선이 여기에 표시됩니다</div>
@@ -239,6 +253,7 @@ function renderApp() {
               <button type="button" data-margin="isolated">격리 (Isolated)</button>
             </div>
           </div>
+          <div class="field"><label for="feeInput">수수료 (₩, 선택)</label><input id="feeInput" type="number" step="any" min="0" placeholder="0"></div>
           <div class="field"><label for="memoInput">메모 (선택)</label><textarea id="memoInput" placeholder="진입 이유, 전략, 복기 등"></textarea></div>
           <div class="preview-box"><span>예상 손익</span><strong id="previewValue" class="mono">—</strong></div>
           <div class="form-error" id="formError"></div>
@@ -306,7 +321,12 @@ function wireApp() {
     weightInput: document.getElementById('weightInput'),
     leverageRange: document.getElementById('leverageRange'),
     leverageInput: document.getElementById('leverageInput'),
+    feeInput: document.getElementById('feeInput'),
     memoInput: document.getElementById('memoInput'),
+    periodPills: document.getElementById('periodPills'),
+    periodCustomRange: document.getElementById('periodCustomRange'),
+    periodFromInput: document.getElementById('periodFromInput'),
+    periodToInput: document.getElementById('periodToInput'),
     previewValue: document.getElementById('previewValue'),
     formError: document.getElementById('formError'),
     submitBtn: document.getElementById('submitBtn'),
@@ -422,7 +442,7 @@ function wireApp() {
     els.leverageRange.value = v;
     updatePreview();
   });
-  ['entryInput', 'exitInput', 'weightInput'].forEach((k) => els[k].addEventListener('input', updatePreview));
+  ['entryInput', 'exitInput', 'weightInput', 'feeInput'].forEach((k) => els[k].addEventListener('input', updatePreview));
 
   function updatePreview() {
     const entry = parseFloat(els.entryInput.value);
@@ -434,7 +454,8 @@ function wireApp() {
       els.previewValue.className = 'mono';
       return;
     }
-    const r = calcTrade({ side: state.currentSide, entry, exit, weight, leverage }, state.capital);
+    const fee = parseFloat(els.feeInput.value) || 0;
+    const r = calcTrade({ side: state.currentSide, entry, exit, weight, leverage, fee }, state.capital);
     els.previewValue.textContent = `${fmtPct(r.pnlPct)}  (${fmtWon(r.pnlAmount)})`;
     els.previewValue.className = 'mono ' + (r.pnlPct > 0 ? 'good' : r.pnlPct < 0 ? 'bad' : '');
   }
@@ -462,8 +483,56 @@ function wireApp() {
     els.statTotalSub.textContent = `승 ${s.wins} · 패 ${s.losses}`;
   }
 
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function toDateStr(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+
+  function getChartTrades() {
+    const mode = state.chartPeriod;
+    if (mode === 'all') return state.trades;
+    const today = new Date();
+    if (mode === '7d' || mode === '30d' || mode === '90d') {
+      const days = mode === '7d' ? 7 : mode === '30d' ? 30 : 90;
+      const from = new Date(today); from.setDate(from.getDate() - (days - 1));
+      const fromStr = toDateStr(from);
+      return state.trades.filter((t) => t.date >= fromStr);
+    }
+    if (mode === 'month') {
+      const fromStr = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-01`;
+      return state.trades.filter((t) => t.date >= fromStr);
+    }
+    if (mode === 'custom') {
+      const from = state.chartFrom, to = state.chartTo;
+      return state.trades.filter((t) => (!from || t.date >= from) && (!to || t.date <= to));
+    }
+    return state.trades;
+  }
+
+  els.periodPills.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-period]');
+    if (!btn) return;
+    state.chartPeriod = btn.dataset.period;
+    els.periodPills.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+    if (state.chartPeriod === 'custom') {
+      els.periodCustomRange.hidden = false;
+      if (!state.chartFrom) {
+        const from = new Date(); from.setDate(from.getDate() - 29);
+        state.chartFrom = toDateStr(from);
+        els.periodFromInput.value = state.chartFrom;
+      }
+      if (!state.chartTo) {
+        state.chartTo = toDateStr(new Date());
+        els.periodToInput.value = state.chartTo;
+      }
+    } else {
+      els.periodCustomRange.hidden = true;
+    }
+    renderChart();
+  });
+  els.periodFromInput.addEventListener('change', () => { state.chartFrom = els.periodFromInput.value; renderChart(); });
+  els.periodToInput.addEventListener('change', () => { state.chartTo = els.periodToInput.value; renderChart(); });
+
   function renderChart() {
-    const asc = sortedAsc(state.trades);
+    const asc = sortedAsc(getChartTrades());
     const svg = els.svg;
     svg.innerHTML = '';
     if (asc.length === 0) {
@@ -619,6 +688,7 @@ function wireApp() {
     els.weightInput.value = trade.weight;
     els.leverageInput.value = trade.leverage;
     els.leverageRange.value = trade.leverage;
+    els.feeInput.value = trade.fee || '';
     els.memoInput.value = trade.memo || '';
     state.currentSide = trade.side;
     state.currentMargin = trade.margin;
@@ -693,6 +763,7 @@ function wireApp() {
       weight: parseFloat(els.weightInput.value),
       leverage: parseFloat(els.leverageInput.value),
       margin: state.currentMargin,
+      fee: parseFloat(els.feeInput.value) || 0,
       memo: (els.memoInput.value || '').trim(),
     };
     if (!data.date) { els.formError.textContent = '날짜를 입력해주세요.'; return; }
@@ -701,6 +772,7 @@ function wireApp() {
     if (!(data.exit > 0)) { els.formError.textContent = '매도단가는 0보다 커야 합니다.'; return; }
     if (isNaN(data.weight) || data.weight < 0 || data.weight > 100) { els.formError.textContent = '비중은 0~100 사이여야 합니다.'; return; }
     if (isNaN(data.leverage) || data.leverage < 0 || data.leverage > 100) { els.formError.textContent = '배율은 0~100 사이여야 합니다.'; return; }
+    if (data.fee < 0) { els.formError.textContent = '수수료는 0 이상이어야 합니다.'; return; }
 
     const isEditing = !!state.editingId;
     els.submitBtn.disabled = true; els.submitBtn.textContent = isEditing ? '수정 중…' : '저장 중…';

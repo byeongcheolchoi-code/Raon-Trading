@@ -99,6 +99,19 @@ button { font-family: inherit; }
 .chart-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
 .chart-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px; }
 .chart-caption { margin: 8px 2px 0; font-size: 11px; color: var(--text-muted); }
+.period-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.period-pills button {
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
+  font-size: 12px; font-weight: 600; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+}
+.period-pills button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.period-custom-range { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.period-custom-range[hidden] { display: none; }
+.period-custom-range span { color: var(--text-muted); font-size: 12px; }
+.period-custom-range input[type="date"] {
+  font-family: var(--font-mono); font-size: 12px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 8px; color: var(--text-primary);
+}
 
 .grid-main { display: grid; grid-template-columns: 340px 1fr; gap: 14px; align-items: start; }
 @media (max-width: 860px) { .grid-main { grid-template-columns: 1fr; } }
