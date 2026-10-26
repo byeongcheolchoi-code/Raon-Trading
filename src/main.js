@@ -222,6 +222,12 @@ function renderApp() {
         <div class="chart-empty" id="chartEmpty">첫 거래를 입력하면 손익 곡선이 여기에 표시됩니다</div>
       </div>
       <p class="chart-caption">기준선(0) 위는 이익 구간, 아래는 손실 구간입니다.</p>
+
+      <div class="chart-sub-head">일별 손익</div>
+      <div class="chart-wrap daily-chart-wrap">
+        <svg id="dailyChart" viewBox="0 0 760 130" preserveAspectRatio="none" role="img" aria-label="일별 손익 막대그래프"></svg>
+        <div class="chart-empty" id="dailyChartEmpty">표시할 일별 데이터가 없습니다</div>
+      </div>
     </section>
 
     <section class="grid-main">
@@ -318,6 +324,8 @@ function wireApp() {
     chartRange: document.getElementById('chartRange'),
     chartEmpty: document.getElementById('chartEmpty'),
     svg: document.getElementById('pnlChart'),
+    dailySvg: document.getElementById('dailyChart'),
+    dailyChartEmpty: document.getElementById('dailyChartEmpty'),
     form: document.getElementById('tradeForm'),
     dateInput: document.getElementById('dateInput'),
     symbolInput: document.getElementById('symbolInput'),
@@ -540,9 +548,10 @@ function wireApp() {
     }
     renderStats();
     renderChart();
+    renderDailyChart();
   });
-  els.periodFromInput.addEventListener('change', () => { state.periodFrom = els.periodFromInput.value; renderStats(); renderChart(); });
-  els.periodToInput.addEventListener('change', () => { state.periodTo = els.periodToInput.value; renderStats(); renderChart(); });
+  els.periodFromInput.addEventListener('change', () => { state.periodFrom = els.periodFromInput.value; renderStats(); renderChart(); renderDailyChart(); });
+  els.periodToInput.addEventListener('change', () => { state.periodTo = els.periodToInput.value; renderStats(); renderChart(); renderDailyChart(); });
 
   function renderChart() {
     const asc = sortedAsc(getPeriodTrades());
@@ -658,6 +667,102 @@ function wireApp() {
     hitRect.addEventListener('mouseleave', hideHover);
   }
 
+  function renderDailyChart() {
+    const trades = getPeriodTrades();
+    const svg = els.dailySvg;
+    svg.innerHTML = '';
+    if (trades.length === 0) {
+      els.dailyChartEmpty.hidden = false;
+      return;
+    }
+    els.dailyChartEmpty.hidden = true;
+
+    const byDate = new Map();
+    trades.forEach((t) => {
+      const r = calcTrade(t, state.capital);
+      const cur = byDate.get(t.date) || { amount: 0, pct: 0, count: 0 };
+      cur.amount += r.pnlAmount;
+      cur.pct += r.pnlPct;
+      cur.count += 1;
+      byDate.set(t.date, cur);
+    });
+    const days = Array.from(byDate.keys()).sort().map((date) => ({ date, ...byDate.get(date) }));
+
+    const W = 760, H = 130, padL = 54, padR = 16, padT = 10, padB = 10;
+    const innerW = W - padL - padR, innerH = H - padT - padB;
+    const maxAbs = Math.max(...days.map((d) => Math.abs(d.amount)), 1);
+    const zeroY = padT + innerH / 2;
+    const scale = (innerH / 2) / maxAbs;
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs) => { const n = document.createElementNS(svgNS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+    const cs = getComputedStyle(document.documentElement);
+    const goodColor = cs.getPropertyValue('--good').trim();
+    const badColor = cs.getPropertyValue('--bad').trim();
+    const mutedColor = cs.getPropertyValue('--text-muted').trim();
+    const baselineColor = cs.getPropertyValue('--baseline').trim();
+
+    svg.appendChild(el('line', { x1: padL, x2: W - padR, y1: zeroY, y2: zeroY, stroke: baselineColor, 'stroke-width': '1' }));
+    const zeroLabel = el('text', { x: padL - 8, y: zeroY + 4, 'text-anchor': 'end', 'font-size': '10.5', fill: mutedColor, 'font-family': 'JetBrains Mono, monospace' });
+    zeroLabel.textContent = '0';
+    svg.appendChild(zeroLabel);
+
+    const n = days.length;
+    const slot = innerW / n;
+    const barW = Math.max(2, Math.min(28, slot * 0.6));
+
+    const bars = [];
+    days.forEach((d, i) => {
+      const cx = padL + slot * (i + 0.5);
+      const barH = Math.abs(d.amount) * scale;
+      const y = d.amount >= 0 ? zeroY - barH : zeroY;
+      const h = Math.max(barH, d.amount === 0 ? 0 : 1.5);
+      const color = d.amount > 0 ? goodColor : d.amount < 0 ? badColor : mutedColor;
+      const rect = el('rect', { x: cx - barW / 2, y, width: barW, height: h, rx: Math.min(3, barW / 2), fill: color, opacity: '0.9' });
+      svg.appendChild(rect);
+      bars.push({ ...d, cx });
+    });
+
+    const crosshair = el('line', { x1: 0, x2: 0, y1: padT, y2: padT + innerH, stroke: mutedColor, 'stroke-width': '1', opacity: '0' });
+    const tipGroup = el('g', { opacity: '0' });
+    const tipRect = el('rect', { rx: '5', ry: '5', height: '34' });
+    const tipText1 = el('text', { 'font-size': '10.5', 'font-family': 'JetBrains Mono, monospace' });
+    const tipText2 = el('text', { 'font-size': '11.5', 'font-weight': '700', 'font-family': 'JetBrains Mono, monospace' });
+    tipGroup.appendChild(tipRect); tipGroup.appendChild(tipText1); tipGroup.appendChild(tipText2);
+    svg.appendChild(crosshair); svg.appendChild(tipGroup);
+    const hitRect = el('rect', { x: padL, y: padT, width: innerW, height: innerH, fill: 'transparent' });
+    svg.appendChild(hitRect);
+
+    function showHover(i) {
+      const d = bars[i];
+      crosshair.setAttribute('x1', d.cx); crosshair.setAttribute('x2', d.cx); crosshair.setAttribute('opacity', '0.3');
+      tipText1.textContent = `${d.date} (${d.count}건)`;
+      tipText2.textContent = `${fmtPct(d.pct)}  ${fmtWon(d.amount)}`;
+      const bgColor = cs.getPropertyValue('--text-primary').trim();
+      const fgColor = cs.getPropertyValue('--bg').trim();
+      tipRect.setAttribute('fill', bgColor);
+      tipText1.setAttribute('fill', fgColor); tipText1.setAttribute('opacity', '0.7');
+      tipText2.setAttribute('fill', fgColor);
+      const boxW = 150;
+      const boxX = Math.min(Math.max(d.cx - boxW / 2, padL), W - padR - boxW);
+      const boxY = d.amount >= 0 ? padT + 2 : padT + innerH - 36;
+      tipRect.setAttribute('x', boxX); tipRect.setAttribute('y', boxY); tipRect.setAttribute('width', boxW);
+      tipText1.setAttribute('x', boxX + 8); tipText1.setAttribute('y', boxY + 14);
+      tipText2.setAttribute('x', boxX + 8); tipText2.setAttribute('y', boxY + 27);
+      tipGroup.setAttribute('opacity', '1');
+    }
+    function hideHover() { crosshair.setAttribute('opacity', '0'); tipGroup.setAttribute('opacity', '0'); }
+    hitRect.addEventListener('mousemove', (e) => {
+      const rect = svg.getBoundingClientRect();
+      const scaleX = W / rect.width;
+      const mx = (e.clientX - rect.left) * scaleX;
+      let idx = Math.floor((mx - padL) / slot);
+      idx = Math.max(0, Math.min(n - 1, idx));
+      showHover(idx);
+    });
+    hitRect.addEventListener('mouseleave', hideHover);
+  }
+
   function renderTable() {
     const desc = sortedAsc(state.trades).slice().reverse();
     els.tradeCount.textContent = `${desc.length}건`;
@@ -750,7 +855,7 @@ function wireApp() {
     }
   }
 
-  function renderAll() { renderStats(); renderChart(); renderTable(); renderWatchlist(); updatePreview(); }
+  function renderAll() { renderStats(); renderChart(); renderDailyChart(); renderTable(); renderWatchlist(); updatePreview(); }
 
   function formatCapitalDisplay() { els.capitalInput.value = state.capital.toLocaleString('ko-KR'); }
   els.capitalInput.addEventListener('focus', () => { els.capitalInput.value = String(state.capital); });
@@ -799,7 +904,7 @@ function wireApp() {
     refetchTrades();
   });
 
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderChart);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { renderChart(); renderDailyChart(); });
 
   formatCapitalDisplay();
   renderAll();
