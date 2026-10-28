@@ -37,6 +37,7 @@ create policy trades_delete_own on public.trades for delete using (auth.uid() = 
 create table if not exists public.settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
   capital numeric not null default 10000000,
+  usd_krw_rate numeric not null default 1400 check (usd_krw_rate > 0),
   updated_at timestamptz not null default now()
 );
 

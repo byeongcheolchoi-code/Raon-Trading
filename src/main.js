@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js';
 import { calcTrade, computeStats, sortedAsc, fmtWon, fmtPct, fmtPrice } from './lib/calc.js';
 
 const DEFAULT_CAPITAL = 10000000;
+const DEFAULT_USD_KRW_RATE = 1400;
 const root = document.getElementById('app');
 
 const state = {
@@ -10,6 +11,7 @@ const state = {
   trades: [],
   watchlist: [],
   capital: DEFAULT_CAPITAL,
+  usdKrwRate: DEFAULT_USD_KRW_RATE,
   loading: true,
   currentSide: 'long',
   currentMargin: 'cross',
@@ -81,8 +83,9 @@ function refreshView() {
 async function loadData() {
   const uid = state.session.user.id;
 
-  const { data: settingsRow } = await supabase.from('settings').select('capital').eq('user_id', uid).maybeSingle();
+  const { data: settingsRow } = await supabase.from('settings').select('capital, usd_krw_rate').eq('user_id', uid).maybeSingle();
   state.capital = settingsRow && typeof settingsRow.capital === 'number' ? settingsRow.capital : DEFAULT_CAPITAL;
+  state.usdKrwRate = settingsRow && typeof settingsRow.usd_krw_rate === 'number' ? settingsRow.usd_krw_rate : DEFAULT_USD_KRW_RATE;
 
   const { data: tradeRows, error } = await supabase.from('trades').select('*').eq('user_id', uid).order('date', { ascending: true });
   if (!error) state.trades = tradeRows || [];
@@ -188,6 +191,10 @@ function renderApp() {
           <label for="capitalInput">초기자본</label>
           <div class="capital-field"><span>₩</span><input id="capitalInput" type="text" inputmode="numeric"></div>
         </div>
+        <div class="capital-control">
+          <label for="rateInput">환율(1 USDT)</label>
+          <div class="capital-field"><span>₩</span><input id="rateInput" type="text" inputmode="numeric"></div>
+        </div>
         <button type="button" class="ghost-btn" id="watchlistBtn">☆ 관심종목</button>
         <button type="button" class="install-btn" id="installBtn" hidden>⬇️ 앱 설치</button>
         <button type="button" class="ghost-btn" id="signOutBtn">로그아웃</button>
@@ -267,8 +274,8 @@ function renderApp() {
             </div>
           </div>
           <div class="field-row">
-            <div class="field"><label for="feeEntryInput">진입 수수료 (₩, 선택)</label><input id="feeEntryInput" type="number" step="any" min="0" placeholder="0"></div>
-            <div class="field"><label for="feeExitInput">청산 수수료 (₩, 선택)</label><input id="feeExitInput" type="number" step="any" min="0" placeholder="0"></div>
+            <div class="field"><label for="feeEntryInput">진입 수수료 (USDT, 선택)</label><input id="feeEntryInput" type="number" step="any" min="0" placeholder="0"></div>
+            <div class="field"><label for="feeExitInput">청산 수수료 (USDT, 선택)</label><input id="feeExitInput" type="number" step="any" min="0" placeholder="0"></div>
           </div>
           <div class="field"><label for="memoInput">메모 (선택)</label><textarea id="memoInput" placeholder="진입 이유, 전략, 복기 등"></textarea></div>
           <div class="preview-box"><span>예상 손익</span><strong id="previewValue" class="mono">—</strong></div>
@@ -316,6 +323,7 @@ function renderApp() {
 function wireApp() {
   const els = {
     capitalInput: document.getElementById('capitalInput'),
+    rateInput: document.getElementById('rateInput'),
     installBtn: document.getElementById('installBtn'),
     signOutBtn: document.getElementById('signOutBtn'),
     statWinRate: document.getElementById('statWinRate'),
@@ -475,7 +483,7 @@ function wireApp() {
     }
     const feeEntry = parseFloat(els.feeEntryInput.value) || 0;
     const feeExit = parseFloat(els.feeExitInput.value) || 0;
-    const r = calcTrade({ side: state.currentSide, entry, exit, weight, leverage, fee_entry: feeEntry, fee_exit: feeExit }, state.capital);
+    const r = calcTrade({ side: state.currentSide, entry, exit, weight, leverage, fee_entry: feeEntry, fee_exit: feeExit }, state.capital, state.usdKrwRate);
     els.previewValue.textContent = `${fmtPct(r.pnlPct)}  (${fmtWon(r.pnlAmount)})`;
     els.previewValue.className = 'mono ' + (r.pnlPct > 0 ? 'good' : r.pnlPct < 0 ? 'bad' : '');
   }
@@ -512,7 +520,7 @@ function wireApp() {
   }
 
   function renderStats() {
-    const s = computeStats(getPeriodTrades(), state.capital);
+    const s = computeStats(getPeriodTrades(), state.capital, state.usdKrwRate);
     if (!s) {
       els.statWinRate.textContent = '—'; els.statWinRate.className = 'stat-value';
       els.statWinRateSub.textContent = '거래 없음';
@@ -574,7 +582,7 @@ function wireApp() {
 
     let cum = 0;
     const points = [{ x: 0, y: 0, label: '시작' }];
-    asc.forEach((t) => { cum += calcTrade(t, state.capital).pnlAmount; points.push({ x: points.length, y: cum, date: t.date }); });
+    asc.forEach((t) => { cum += calcTrade(t, state.capital, state.usdKrwRate).pnlAmount; points.push({ x: points.length, y: cum, date: t.date }); });
 
     const W = 760, H = 220, padL = 54, padR = 16, padT = 16, padB = 26;
     const innerW = W - padL - padR, innerH = H - padT - padB;
@@ -686,7 +694,7 @@ function wireApp() {
 
     const byDate = new Map();
     trades.forEach((t) => {
-      const r = calcTrade(t, state.capital);
+      const r = calcTrade(t, state.capital, state.usdKrwRate);
       const cur = byDate.get(t.date) || { amount: 0, pct: 0, count: 0 };
       cur.amount += r.pnlAmount;
       cur.pct += r.pnlPct;
@@ -780,7 +788,7 @@ function wireApp() {
     state.trades.forEach((t) => { if (t.position_group) groupCounts[t.position_group] = (groupCounts[t.position_group] || 0) + 1; });
 
     desc.forEach((t) => {
-      const r = calcTrade(t, state.capital);
+      const r = calcTrade(t, state.capital, state.usdKrwRate);
       const tr = document.createElement('tr');
       const td = (html, cls) => { const c = document.createElement('td'); if (cls) c.className = cls; c.innerHTML = html; tr.appendChild(c); };
       td(t.date);
@@ -794,7 +802,7 @@ function wireApp() {
       td(`<span class="pill margin">${t.margin === 'isolated' ? '격리' : '교차'}</span>`);
       td(`<span class="num ${r.pnlPct > 0 ? 'good' : r.pnlPct < 0 ? 'bad' : ''}">${fmtPct(r.pnlPct)}</span>`);
       const won = (n) => '₩' + Math.round(Math.abs(n)).toLocaleString('ko-KR');
-      const feeTitle = r.fee > 0 ? ` title="총손익 ${fmtWon(r.grossPnlAmount)} − 수수료 ${won(r.fee)} (진입 ${won(r.feeEntry)} + 청산 ${won(r.feeExit)})"` : '';
+      const feeTitle = r.fee > 0 ? ` title="총손익 ${fmtWon(r.grossPnlAmount)} − 수수료 ${won(r.fee)} (진입 ${r.feeEntryUsdt} USDT=${won(r.feeEntry)} + 청산 ${r.feeExitUsdt} USDT=${won(r.feeExit)}, 환율 ${state.usdKrwRate.toLocaleString('ko-KR')}원)"` : '';
       td(`<span class="num ${r.pnlAmount > 0 ? 'good' : r.pnlAmount < 0 ? 'bad' : ''}"${feeTitle}>${fmtWon(r.pnlAmount)}${r.fee > 0 ? ' 🧾' : ''}</span>`);
       td(r.pnlPct > 1e-12 ? '<span class="pill long">승</span>' : r.pnlPct < -1e-12 ? '<span class="pill short">패</span>' : '<span class="pill margin">무</span>');
       const actionTd = document.createElement('td');
@@ -908,7 +916,10 @@ function wireApp() {
 
   function renderAll() { renderStats(); renderChart(); renderDailyChart(); renderTable(); renderWatchlist(); updatePreview(); }
 
-  function formatCapitalDisplay() { els.capitalInput.value = state.capital.toLocaleString('ko-KR'); }
+  function formatCapitalDisplay() {
+    els.capitalInput.value = state.capital.toLocaleString('ko-KR');
+    els.rateInput.value = state.usdKrwRate.toLocaleString('ko-KR');
+  }
   els.capitalInput.addEventListener('focus', () => { els.capitalInput.value = String(state.capital); });
   els.capitalInput.addEventListener('blur', async () => {
     let n = parseInt(els.capitalInput.value.replace(/[^0-9]/g, ''), 10);
@@ -917,6 +928,16 @@ function wireApp() {
     formatCapitalDisplay();
     renderAll();
     await supabase.from('settings').upsert({ user_id: state.session.user.id, capital: n, updated_at: new Date().toISOString() });
+  });
+
+  els.rateInput.addEventListener('focus', () => { els.rateInput.value = String(state.usdKrwRate); });
+  els.rateInput.addEventListener('blur', async () => {
+    let n = parseFloat(els.rateInput.value.replace(/[^0-9.]/g, ''));
+    if (!n || n <= 0) n = DEFAULT_USD_KRW_RATE;
+    state.usdKrwRate = n;
+    formatCapitalDisplay();
+    renderAll();
+    await supabase.from('settings').upsert({ user_id: state.session.user.id, usd_krw_rate: n, updated_at: new Date().toISOString() });
   });
 
   els.form.addEventListener('submit', async (e) => {

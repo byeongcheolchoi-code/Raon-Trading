@@ -1,16 +1,22 @@
-export function calcTrade(t, capital) {
+// usdKrwRate converts fee_entry/fee_exit, which are entered in USDT (matching what
+// exchanges actually charge), into KRW so they can be netted against the
+// KRW-denominated capital. Prices (entry/exit) stay unitless since only their ratio
+// is used, so no conversion is needed there.
+export function calcTrade(t, capital, usdKrwRate = 1) {
   const dir = t.side === 'long' ? 1 : -1;
   const entry = Number(t.entry), exit = Number(t.exit);
   const priceChangePct = entry > 0 ? (dir * (exit - entry)) / entry : 0;
   const leveragedPct = priceChangePct * Number(t.leverage);
   const grossPnlPct = leveragedPct * (Number(t.weight) / 100);
   const grossPnlAmount = capital * grossPnlPct;
-  const feeEntry = Number(t.fee_entry) || 0;
-  const feeExit = Number(t.fee_exit) || 0;
+  const feeEntryUsdt = Number(t.fee_entry) || 0;
+  const feeExitUsdt = Number(t.fee_exit) || 0;
+  const feeEntry = feeEntryUsdt * usdKrwRate;
+  const feeExit = feeExitUsdt * usdKrwRate;
   const fee = feeEntry + feeExit;
   const pnlAmount = grossPnlAmount - fee;
   const pnlPct = capital > 0 ? pnlAmount / capital : 0;
-  return { priceChangePct, leveragedPct, grossPnlPct, grossPnlAmount, feeEntry, feeExit, fee, pnlAmount, pnlPct };
+  return { priceChangePct, leveragedPct, grossPnlPct, grossPnlAmount, feeEntryUsdt, feeExitUsdt, feeEntry, feeExit, fee, pnlAmount, pnlPct };
 }
 
 // groups rows that share position_group into one logical position (분할청산), so a
@@ -27,14 +33,14 @@ function groupIntoPositions(trades) {
   return groups;
 }
 
-export function computeStats(trades, capital) {
+export function computeStats(trades, capital, usdKrwRate = 1) {
   if (trades.length === 0) return null;
   const groups = groupIntoPositions(trades);
   let wins = 0, losses = 0, sumWinPct = 0, sumLossPct = 0, cumAmount = 0, cumPct = 0;
   groups.forEach((rows) => {
     let gAmount = 0, gPct = 0;
     rows.forEach((t) => {
-      const r = calcTrade(t, capital);
+      const r = calcTrade(t, capital, usdKrwRate);
       gAmount += r.pnlAmount;
       gPct += r.pnlPct;
       cumAmount += r.pnlAmount;
