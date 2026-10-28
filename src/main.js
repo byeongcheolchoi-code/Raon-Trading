@@ -264,7 +264,10 @@ function renderApp() {
               <button type="button" data-margin="isolated">격리 (Isolated)</button>
             </div>
           </div>
-          <div class="field"><label for="feeInput">수수료 (₩, 선택)</label><input id="feeInput" type="number" step="any" min="0" placeholder="0"></div>
+          <div class="field-row">
+            <div class="field"><label for="feeEntryInput">진입 수수료 (₩, 선택)</label><input id="feeEntryInput" type="number" step="any" min="0" placeholder="0"></div>
+            <div class="field"><label for="feeExitInput">청산 수수료 (₩, 선택)</label><input id="feeExitInput" type="number" step="any" min="0" placeholder="0"></div>
+          </div>
           <div class="field"><label for="memoInput">메모 (선택)</label><textarea id="memoInput" placeholder="진입 이유, 전략, 복기 등"></textarea></div>
           <div class="preview-box"><span>예상 손익</span><strong id="previewValue" class="mono">—</strong></div>
           <div class="form-error" id="formError"></div>
@@ -334,7 +337,8 @@ function wireApp() {
     weightInput: document.getElementById('weightInput'),
     leverageRange: document.getElementById('leverageRange'),
     leverageInput: document.getElementById('leverageInput'),
-    feeInput: document.getElementById('feeInput'),
+    feeEntryInput: document.getElementById('feeEntryInput'),
+    feeExitInput: document.getElementById('feeExitInput'),
     memoInput: document.getElementById('memoInput'),
     periodPills: document.getElementById('periodPills'),
     periodCustomRange: document.getElementById('periodCustomRange'),
@@ -455,7 +459,7 @@ function wireApp() {
     els.leverageRange.value = v;
     updatePreview();
   });
-  ['entryInput', 'exitInput', 'weightInput', 'feeInput'].forEach((k) => els[k].addEventListener('input', updatePreview));
+  ['entryInput', 'exitInput', 'weightInput', 'feeEntryInput', 'feeExitInput'].forEach((k) => els[k].addEventListener('input', updatePreview));
 
   function updatePreview() {
     const entry = parseFloat(els.entryInput.value);
@@ -467,8 +471,9 @@ function wireApp() {
       els.previewValue.className = 'mono';
       return;
     }
-    const fee = parseFloat(els.feeInput.value) || 0;
-    const r = calcTrade({ side: state.currentSide, entry, exit, weight, leverage, fee }, state.capital);
+    const feeEntry = parseFloat(els.feeEntryInput.value) || 0;
+    const feeExit = parseFloat(els.feeExitInput.value) || 0;
+    const r = calcTrade({ side: state.currentSide, entry, exit, weight, leverage, fee_entry: feeEntry, fee_exit: feeExit }, state.capital);
     els.previewValue.textContent = `${fmtPct(r.pnlPct)}  (${fmtWon(r.pnlAmount)})`;
     els.previewValue.className = 'mono ' + (r.pnlPct > 0 ? 'good' : r.pnlPct < 0 ? 'bad' : '');
   }
@@ -806,7 +811,8 @@ function wireApp() {
     els.weightInput.value = trade.weight;
     els.leverageInput.value = trade.leverage;
     els.leverageRange.value = trade.leverage;
-    els.feeInput.value = trade.fee || '';
+    els.feeEntryInput.value = trade.fee_entry || '';
+    els.feeExitInput.value = trade.fee_exit || '';
     els.memoInput.value = trade.memo || '';
     state.currentSide = trade.side;
     state.currentMargin = trade.margin;
@@ -881,7 +887,8 @@ function wireApp() {
       weight: parseFloat(els.weightInput.value),
       leverage: parseFloat(els.leverageInput.value),
       margin: state.currentMargin,
-      fee: parseFloat(els.feeInput.value) || 0,
+      fee_entry: parseFloat(els.feeEntryInput.value) || 0,
+      fee_exit: parseFloat(els.feeExitInput.value) || 0,
       memo: (els.memoInput.value || '').trim(),
     };
     if (!data.date) { els.formError.textContent = '날짜를 입력해주세요.'; return; }
@@ -890,7 +897,7 @@ function wireApp() {
     if (!(data.exit > 0)) { els.formError.textContent = '매도단가는 0보다 커야 합니다.'; return; }
     if (isNaN(data.weight) || data.weight < 0 || data.weight > 100) { els.formError.textContent = '비중은 0~100 사이여야 합니다.'; return; }
     if (isNaN(data.leverage) || data.leverage < 0 || data.leverage > 100) { els.formError.textContent = '배율은 0~100 사이여야 합니다.'; return; }
-    if (data.fee < 0) { els.formError.textContent = '수수료는 0 이상이어야 합니다.'; return; }
+    if (data.fee_entry < 0 || data.fee_exit < 0) { els.formError.textContent = '수수료는 0 이상이어야 합니다.'; return; }
 
     const isEditing = !!state.editingId;
     els.submitBtn.disabled = true; els.submitBtn.textContent = isEditing ? '수정 중…' : '저장 중…';

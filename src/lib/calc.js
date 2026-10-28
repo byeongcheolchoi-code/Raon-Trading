@@ -5,10 +5,12 @@ export function calcTrade(t, capital) {
   const leveragedPct = priceChangePct * Number(t.leverage);
   const grossPnlPct = leveragedPct * (Number(t.weight) / 100);
   const grossPnlAmount = capital * grossPnlPct;
-  const fee = Number(t.fee) || 0;
+  const feeEntry = Number(t.fee_entry) || 0;
+  const feeExit = Number(t.fee_exit) || 0;
+  const fee = feeEntry + feeExit;
   const pnlAmount = grossPnlAmount - fee;
   const pnlPct = capital > 0 ? pnlAmount / capital : 0;
-  return { priceChangePct, leveragedPct, grossPnlPct, grossPnlAmount, fee, pnlAmount, pnlPct };
+  return { priceChangePct, leveragedPct, grossPnlPct, grossPnlAmount, feeEntry, feeExit, fee, pnlAmount, pnlPct };
 }
 
 export function computeStats(trades, capital) {

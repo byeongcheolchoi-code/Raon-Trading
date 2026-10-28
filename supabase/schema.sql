@@ -12,7 +12,8 @@ create table if not exists public.trades (
   weight numeric not null check (weight >= 0 and weight <= 100),
   leverage numeric not null check (leverage >= 0 and leverage <= 100),
   margin text not null check (margin in ('cross', 'isolated')),
-  fee numeric not null default 0 check (fee >= 0),
+  fee_entry numeric not null default 0 check (fee_entry >= 0),
+  fee_exit numeric not null default 0 check (fee_exit >= 0),
   memo text default '',
   created_at timestamptz not null default now()
 );
