@@ -255,8 +255,8 @@ function renderApp() {
             <div class="field"><label for="weightInput">비중 (%)</label><input id="weightInput" type="number" step="any" min="0" max="100" required></div>
             <div class="field"><label for="leverageInput">배율 (0–100배)</label>
               <div class="leverage-row">
-                <input id="leverageRange" type="range" min="0" max="100" step="1" value="1">
-                <input id="leverageInput" class="mono lev-num" type="number" min="0" max="100" step="1" value="1">
+                <input id="leverageRange" type="range" min="0" max="100" step="0.1" value="1">
+                <input id="leverageInput" class="mono lev-num" type="number" min="0" max="100" step="0.1" value="1">
               </div>
             </div>
           </div>
@@ -790,10 +790,12 @@ function wireApp() {
       td(fmtPrice(t.entry));
       td(fmtPrice(t.exit));
       td(Number(t.weight).toFixed(1) + '%');
-      td(Number(t.leverage).toFixed(0) + 'x');
+      td((Number(t.leverage) % 1 === 0 ? Number(t.leverage).toFixed(0) : Number(t.leverage).toFixed(1)) + 'x');
       td(`<span class="pill margin">${t.margin === 'isolated' ? '격리' : '교차'}</span>`);
       td(`<span class="num ${r.pnlPct > 0 ? 'good' : r.pnlPct < 0 ? 'bad' : ''}">${fmtPct(r.pnlPct)}</span>`);
-      td(`<span class="num ${r.pnlAmount > 0 ? 'good' : r.pnlAmount < 0 ? 'bad' : ''}">${fmtWon(r.pnlAmount)}</span>`);
+      const won = (n) => '₩' + Math.round(Math.abs(n)).toLocaleString('ko-KR');
+      const feeTitle = r.fee > 0 ? ` title="총손익 ${fmtWon(r.grossPnlAmount)} − 수수료 ${won(r.fee)} (진입 ${won(r.feeEntry)} + 청산 ${won(r.feeExit)})"` : '';
+      td(`<span class="num ${r.pnlAmount > 0 ? 'good' : r.pnlAmount < 0 ? 'bad' : ''}"${feeTitle}>${fmtWon(r.pnlAmount)}${r.fee > 0 ? ' 🧾' : ''}</span>`);
       td(r.pnlPct > 1e-12 ? '<span class="pill long">승</span>' : r.pnlPct < -1e-12 ? '<span class="pill short">패</span>' : '<span class="pill margin">무</span>');
       const actionTd = document.createElement('td');
       const splitBtn = document.createElement('button');
