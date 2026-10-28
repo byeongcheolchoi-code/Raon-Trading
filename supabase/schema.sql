@@ -14,11 +14,13 @@ create table if not exists public.trades (
   margin text not null check (margin in ('cross', 'isolated')),
   fee_entry numeric not null default 0 check (fee_entry >= 0),
   fee_exit numeric not null default 0 check (fee_exit >= 0),
+  position_group uuid null,
   memo text default '',
   created_at timestamptz not null default now()
 );
 
 create index if not exists trades_user_date_idx on public.trades (user_id, date);
+create index if not exists trades_position_group_idx on public.trades (position_group) where position_group is not null;
 
 alter table public.trades enable row level security;
 

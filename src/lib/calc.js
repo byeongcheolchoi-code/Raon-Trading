@@ -13,17 +13,37 @@ export function calcTrade(t, capital) {
   return { priceChangePct, leveragedPct, grossPnlPct, grossPnlAmount, feeEntry, feeExit, fee, pnlAmount, pnlPct };
 }
 
+// groups rows that share position_group into one logical position (분할청산), so a
+// scaled-out winning position counts as one win instead of one per partial exit;
+// ungrouped rows each remain their own singleton position
+function groupIntoPositions(trades) {
+  const groups = new Map();
+  let anon = 0;
+  trades.forEach((t) => {
+    const key = t.position_group || `__single__${anon++}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  });
+  return groups;
+}
+
 export function computeStats(trades, capital) {
   if (trades.length === 0) return null;
+  const groups = groupIntoPositions(trades);
   let wins = 0, losses = 0, sumWinPct = 0, sumLossPct = 0, cumAmount = 0, cumPct = 0;
-  trades.forEach((t) => {
-    const r = calcTrade(t, capital);
-    cumAmount += r.pnlAmount;
-    cumPct += r.pnlPct;
-    if (r.pnlPct > 1e-12) { wins++; sumWinPct += r.pnlPct; }
-    else if (r.pnlPct < -1e-12) { losses++; sumLossPct += Math.abs(r.pnlPct); }
+  groups.forEach((rows) => {
+    let gAmount = 0, gPct = 0;
+    rows.forEach((t) => {
+      const r = calcTrade(t, capital);
+      gAmount += r.pnlAmount;
+      gPct += r.pnlPct;
+      cumAmount += r.pnlAmount;
+      cumPct += r.pnlPct;
+    });
+    if (gPct > 1e-12) { wins++; sumWinPct += gPct; }
+    else if (gPct < -1e-12) { losses++; sumLossPct += Math.abs(gPct); }
   });
-  const total = trades.length;
+  const total = groups.size;
   const winRate = wins / total;
   const avgWin = wins ? sumWinPct / wins : 0;
   const avgLoss = losses ? sumLossPct / losses : 0;

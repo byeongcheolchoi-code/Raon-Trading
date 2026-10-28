@@ -14,6 +14,8 @@ const state = {
   currentSide: 'long',
   currentMargin: 'cross',
   editingId: null,
+  partialGroup: null,
+  partialSourceId: null,
   period: 'all',
   periodFrom: '',
   periodTo: '',
@@ -773,12 +775,17 @@ function wireApp() {
     els.tradeCount.textContent = `${desc.length}건`;
     els.tableEmpty.hidden = desc.length !== 0;
     els.tradeTbody.innerHTML = '';
+
+    const groupCounts = {};
+    state.trades.forEach((t) => { if (t.position_group) groupCounts[t.position_group] = (groupCounts[t.position_group] || 0) + 1; });
+
     desc.forEach((t) => {
       const r = calcTrade(t, state.capital);
       const tr = document.createElement('tr');
       const td = (html, cls) => { const c = document.createElement('td'); if (cls) c.className = cls; c.innerHTML = html; tr.appendChild(c); };
       td(t.date);
-      td(escapeHtml(t.symbol || '—'), 'cell-symbol');
+      const groupBadge = t.position_group ? ` <span class="pill group-badge" title="분할청산 ${groupCounts[t.position_group]}건으로 묶인 포지션">🔗${groupCounts[t.position_group]}</span>` : '';
+      td(escapeHtml(t.symbol || '—') + groupBadge, 'cell-symbol');
       td(`<span class="pill ${t.side === 'long' ? 'long' : 'short'}">${t.side === 'long' ? '롱' : '숏'}</span>`);
       td(fmtPrice(t.entry));
       td(fmtPrice(t.exit));
@@ -789,12 +796,17 @@ function wireApp() {
       td(`<span class="num ${r.pnlAmount > 0 ? 'good' : r.pnlAmount < 0 ? 'bad' : ''}">${fmtWon(r.pnlAmount)}</span>`);
       td(r.pnlPct > 1e-12 ? '<span class="pill long">승</span>' : r.pnlPct < -1e-12 ? '<span class="pill short">패</span>' : '<span class="pill margin">무</span>');
       const actionTd = document.createElement('td');
+      const splitBtn = document.createElement('button');
+      splitBtn.className = 'edit-btn'; splitBtn.type = 'button'; splitBtn.textContent = '분할';
+      splitBtn.title = '이 거래에서 분할 청산을 이어서 입력';
+      splitBtn.addEventListener('click', () => startPartialAdd(t));
       const editBtn = document.createElement('button');
       editBtn.className = 'edit-btn'; editBtn.type = 'button'; editBtn.textContent = '수정';
       editBtn.addEventListener('click', () => startEdit(t));
       const delBtn = document.createElement('button');
       delBtn.className = 'del-btn'; delBtn.type = 'button'; delBtn.textContent = '삭제'; delBtn.dataset.id = t.id;
       delBtn.addEventListener('click', () => handleDeleteClick(delBtn, t.id));
+      actionTd.appendChild(splitBtn);
       actionTd.appendChild(editBtn);
       actionTd.appendChild(delBtn);
       tr.appendChild(actionTd);
@@ -818,6 +830,7 @@ function wireApp() {
     state.currentMargin = trade.margin;
     els.sideCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.side === trade.side));
     els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.margin === trade.margin));
+    els.editingBanner.textContent = '✏️ 거래를 수정하는 중입니다';
     els.editingBanner.hidden = false;
     els.cancelEditBtn.hidden = false;
     els.submitBtn.textContent = '거래 수정';
@@ -825,8 +838,38 @@ function wireApp() {
     els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  function startPartialAdd(trade) {
+    state.editingId = null;
+    state.partialGroup = trade.position_group || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+    state.partialSourceId = trade.position_group ? null : trade.id;
+
+    els.dateInput.value = trade.date;
+    els.symbolInput.value = trade.symbol;
+    els.entryInput.value = trade.entry;
+    els.exitInput.value = '';
+    els.weightInput.value = '';
+    els.leverageInput.value = trade.leverage;
+    els.leverageRange.value = trade.leverage;
+    els.feeEntryInput.value = '';
+    els.feeExitInput.value = '';
+    els.memoInput.value = '';
+    state.currentSide = trade.side;
+    state.currentMargin = trade.margin;
+    els.sideCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.side === trade.side));
+    els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.margin === trade.margin));
+    els.editingBanner.textContent = `➗ ${trade.symbol} 포지션의 분할 청산을 추가하는 중입니다 (같은 포지션으로 묶여 승률에 1건으로 집계됩니다)`;
+    els.editingBanner.hidden = false;
+    els.cancelEditBtn.hidden = false;
+    els.submitBtn.textContent = '분할 청산 저장';
+    updatePreview();
+    els.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    els.weightInput.focus();
+  }
+
   function cancelEdit() {
     state.editingId = null;
+    state.partialGroup = null;
+    state.partialSourceId = null;
     els.form.reset();
     setToday();
     state.currentSide = 'long'; state.currentMargin = 'cross';
@@ -900,12 +943,27 @@ function wireApp() {
     if (data.fee_entry < 0 || data.fee_exit < 0) { els.formError.textContent = '수수료는 0 이상이어야 합니다.'; return; }
 
     const isEditing = !!state.editingId;
-    els.submitBtn.disabled = true; els.submitBtn.textContent = isEditing ? '수정 중…' : '저장 중…';
-    const { error } = isEditing
-      ? await supabase.from('trades').update(data).eq('id', state.editingId)
-      : await supabase.from('trades').insert(data);
+    const isPartial = !isEditing && !!state.partialGroup;
+    if (isPartial) data.position_group = state.partialGroup;
+
+    els.submitBtn.disabled = true;
+    els.submitBtn.textContent = isEditing ? '수정 중…' : '저장 중…';
+
+    let error;
+    if (isEditing) {
+      ({ error } = await supabase.from('trades').update(data).eq('id', state.editingId));
+    } else {
+      ({ error } = await supabase.from('trades').insert(data));
+      if (!error && isPartial && state.partialSourceId) {
+        await supabase.from('trades').update({ position_group: state.partialGroup }).eq('id', state.partialSourceId);
+      }
+    }
     els.submitBtn.disabled = false;
-    if (error) { els.submitBtn.textContent = isEditing ? '거래 수정' : '거래 저장'; els.formError.textContent = (isEditing ? '수정 실패: ' : '저장 실패: ') + error.message; return; }
+    if (error) {
+      els.submitBtn.textContent = isEditing ? '거래 수정' : (isPartial ? '분할 청산 저장' : '거래 저장');
+      els.formError.textContent = (isEditing ? '수정 실패: ' : '저장 실패: ') + error.message;
+      return;
+    }
 
     cancelEdit();
     refetchTrades();

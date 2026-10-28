@@ -171,6 +171,7 @@ tbody tr:last-child td { border-bottom: none; }
 .pill.long { background: var(--good-soft); color: var(--good); }
 .pill.short { background: var(--bad-soft); color: var(--bad); }
 .pill.margin { background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border); }
+.pill.group-badge { background: var(--accent-soft); color: var(--accent-ink); font-size: 10px; padding: 1px 6px; margin-left: 2px; cursor: default; }
 .num.good { color: var(--good); }
 .num.bad { color: var(--bad); }
 .del-btn { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-family: var(--font-body); font-size: 11px; border-radius: 6px; padding: 5px 8px; cursor: pointer; }
