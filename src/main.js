@@ -260,11 +260,12 @@ function renderApp() {
           </div>
           <div class="field-row">
             <div class="field"><label for="weightInput">비중 (%)</label><input id="weightInput" type="number" step="any" min="0" max="100" required></div>
-            <div class="field"><label for="leverageInput">배율 (0–100배)</label>
-              <div class="leverage-row">
-                <input id="leverageRange" type="range" min="0" max="100" step="0.1" value="1">
-                <input id="leverageInput" class="mono lev-num" type="number" min="0" max="100" step="0.1" value="1">
-              </div>
+            <div class="field"><label for="marginUsdtInput">투입 금액 (USDT)</label><input id="marginUsdtInput" type="number" step="any" min="0"></div>
+          </div>
+          <div class="field"><label for="leverageInput">배율 (0–100배)</label>
+            <div class="leverage-row">
+              <input id="leverageRange" type="range" min="0" max="100" step="0.1" value="1">
+              <input id="leverageInput" class="mono lev-num" type="number" min="0" max="100" step="0.1" value="1">
             </div>
           </div>
           <div class="field"><label>마진 모드</label>
@@ -291,7 +292,7 @@ function renderApp() {
         <div class="table-head"><h2>거래 내역</h2><span id="tradeCount">0건</span></div>
         <div class="table-scroll">
           <table id="tradeTable">
-            <thead><tr><th>날짜</th><th>종목</th><th>방향</th><th>매수가</th><th>매도가</th><th>비중</th><th>배율</th><th>마진</th><th>손익%</th><th>손익액</th><th>결과</th><th></th></tr></thead>
+            <thead><tr><th>날짜</th><th>종목</th><th>방향</th><th>매수가</th><th>매도가</th><th>비중</th><th>투입액</th><th>배율</th><th>마진</th><th>손익%</th><th>손익액</th><th>결과</th><th></th></tr></thead>
             <tbody id="tradeTbody"></tbody>
           </table>
         </div>
@@ -345,6 +346,7 @@ function wireApp() {
     entryInput: document.getElementById('entryInput'),
     exitInput: document.getElementById('exitInput'),
     weightInput: document.getElementById('weightInput'),
+    marginUsdtInput: document.getElementById('marginUsdtInput'),
     leverageRange: document.getElementById('leverageRange'),
     leverageInput: document.getElementById('leverageInput'),
     feeEntryInput: document.getElementById('feeEntryInput'),
@@ -469,7 +471,40 @@ function wireApp() {
     els.leverageRange.value = v;
     updatePreview();
   });
-  ['entryInput', 'exitInput', 'weightInput', 'feeEntryInput', 'feeExitInput'].forEach((k) => els[k].addEventListener('input', updatePreview));
+  ['entryInput', 'exitInput', 'feeEntryInput', 'feeExitInput'].forEach((k) => els[k].addEventListener('input', updatePreview));
+
+  // 비중(%) <-> 투입 금액(USDT)은 서로 양방향으로 동기화됨: 둘 중 어느 쪽을 입력해도
+  // 초기자본·환율 기준으로 다른 쪽을 자동 계산해 채운다.
+  function weightToUsdt(weight) {
+    if (!(state.capital > 0) || !(state.usdKrwRate > 0)) return null;
+    const usdt = ((weight / 100) * state.capital) / state.usdKrwRate;
+    return isFinite(usdt) ? usdt : null;
+  }
+  function usdtToWeight(usdt) {
+    if (!(state.capital > 0) || !(state.usdKrwRate > 0)) return null;
+    const weight = ((usdt * state.usdKrwRate) / state.capital) * 100;
+    return isFinite(weight) ? weight : null;
+  }
+  els.weightInput.addEventListener('input', () => {
+    const w = parseFloat(els.weightInput.value);
+    if (els.weightInput.value === '') {
+      els.marginUsdtInput.value = '';
+    } else if (!isNaN(w) && w >= 0) {
+      const usdt = weightToUsdt(w);
+      if (usdt !== null) els.marginUsdtInput.value = Number(usdt.toFixed(4));
+    }
+    updatePreview();
+  });
+  els.marginUsdtInput.addEventListener('input', () => {
+    const u = parseFloat(els.marginUsdtInput.value);
+    if (els.marginUsdtInput.value === '') {
+      els.weightInput.value = '';
+    } else if (!isNaN(u) && u >= 0) {
+      const w = usdtToWeight(u);
+      if (w !== null) els.weightInput.value = Number(Math.min(100, w).toFixed(4));
+    }
+    updatePreview();
+  });
 
   function updatePreview() {
     const entry = parseFloat(els.entryInput.value);
@@ -798,6 +833,8 @@ function wireApp() {
       td(fmtPrice(t.entry));
       td(fmtPrice(t.exit));
       td(Number(t.weight).toFixed(1) + '%');
+      const marginUsdt = weightToUsdt(Number(t.weight));
+      td(`<span class="mono">${marginUsdt !== null ? marginUsdt.toFixed(2) + ' USDT' : '—'}</span>`);
       td((Number(t.leverage) % 1 === 0 ? Number(t.leverage).toFixed(0) : Number(t.leverage).toFixed(1)) + 'x');
       td(`<span class="pill margin">${t.margin === 'isolated' ? '격리' : '교차'}</span>`);
       td(`<span class="num ${r.pnlPct > 0 ? 'good' : r.pnlPct < 0 ? 'bad' : ''}">${fmtPct(r.pnlPct)}</span>`);
@@ -831,6 +868,8 @@ function wireApp() {
     els.entryInput.value = trade.entry;
     els.exitInput.value = trade.exit;
     els.weightInput.value = trade.weight;
+    const wUsdt = weightToUsdt(Number(trade.weight));
+    els.marginUsdtInput.value = wUsdt !== null ? Number(wUsdt.toFixed(4)) : '';
     els.leverageInput.value = trade.leverage;
     els.leverageRange.value = trade.leverage;
     els.feeEntryInput.value = trade.fee_entry || '';
@@ -858,6 +897,7 @@ function wireApp() {
     els.entryInput.value = trade.entry;
     els.exitInput.value = '';
     els.weightInput.value = '';
+    els.marginUsdtInput.value = '';
     els.leverageInput.value = trade.leverage;
     els.leverageRange.value = trade.leverage;
     els.feeEntryInput.value = '';
