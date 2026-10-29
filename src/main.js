@@ -15,6 +15,7 @@ const state = {
   loading: true,
   currentSide: 'long',
   currentMargin: 'cross',
+  currentStrategy: null,
   editingId: null,
   partialGroup: null,
   partialSourceId: null,
@@ -275,6 +276,12 @@ function renderApp() {
               <button type="button" data-margin="isolated">격리 (Isolated)</button>
             </div>
           </div>
+          <div class="field"><label>매매 전략 (선택, 다시 누르면 해제)</label>
+            <div class="segctrl" id="strategyCtrl">
+              <button type="button" data-strategy="trend">추세매매</button>
+              <button type="button" data-strategy="counter">역추세매매</button>
+            </div>
+          </div>
           <div class="field-row">
             <div class="field"><label for="feeEntryInput">진입 수수료 (USDT, 선택)</label><input id="feeEntryInput" type="number" step="any" min="0" placeholder="0"></div>
             <div class="field"><label for="feeExitInput">청산 수수료 (USDT, 선택)</label><input id="feeExitInput" type="number" step="any" min="0" placeholder="0"></div>
@@ -366,6 +373,7 @@ function wireApp() {
     tableEmpty: document.getElementById('tableEmpty'),
     sideCtrl: document.getElementById('sideCtrl'),
     marginCtrl: document.getElementById('marginCtrl'),
+    strategyCtrl: document.getElementById('strategyCtrl'),
     editingBanner: document.getElementById('editingBanner'),
     cancelEditBtn: document.getElementById('cancelEditBtn'),
     watchlistBtn: document.getElementById('watchlistBtn'),
@@ -465,6 +473,18 @@ function wireApp() {
     if (!btn) return;
     state.currentMargin = btn.dataset.margin;
     els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+  });
+  els.strategyCtrl.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-strategy]');
+    if (!btn) return;
+    const alreadyActive = btn.classList.contains('active');
+    els.strategyCtrl.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+    if (alreadyActive) {
+      state.currentStrategy = null;
+    } else {
+      state.currentStrategy = btn.dataset.strategy;
+      btn.classList.add('active');
+    }
   });
 
   // 비중(%) · 투입 금액(USDT) · 수량(Qty)은 서로 맞물려 동기화된다: 셋 중 어느 하나를
@@ -877,7 +897,8 @@ function wireApp() {
       td(t.date);
       const groupBadge = t.position_group ? ` <span class="pill group-badge" title="분할청산 ${groupCounts[t.position_group]}건으로 묶인 포지션">🔗${groupCounts[t.position_group]}</span>` : '';
       td(escapeHtml(t.symbol || '—') + groupBadge, 'cell-symbol');
-      td(`<span class="pill ${t.side === 'long' ? 'long' : 'short'}">${t.side === 'long' ? '롱' : '숏'}</span>`);
+      const strategyBadge = t.strategy ? `<br><span class="pill margin strategy-badge">${t.strategy === 'trend' ? '추세' : '역추세'}</span>` : '';
+      td(`<span class="pill ${t.side === 'long' ? 'long' : 'short'}">${t.side === 'long' ? '롱' : '숏'}</span>${strategyBadge}`);
       td(fmtPrice(t.entry));
       td(fmtPrice(t.exit));
       td(Number(t.weight).toFixed(1) + '%');
@@ -928,8 +949,10 @@ function wireApp() {
     els.memoInput.value = trade.memo || '';
     state.currentSide = trade.side;
     state.currentMargin = trade.margin;
+    state.currentStrategy = trade.strategy || null;
     els.sideCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.side === trade.side));
     els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.margin === trade.margin));
+    els.strategyCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.strategy === state.currentStrategy));
     els.editingBanner.textContent = '✏️ 거래를 수정하는 중입니다';
     els.editingBanner.hidden = false;
     els.cancelEditBtn.hidden = false;
@@ -957,8 +980,10 @@ function wireApp() {
     els.memoInput.value = '';
     state.currentSide = trade.side;
     state.currentMargin = trade.margin;
+    state.currentStrategy = trade.strategy || null;
     els.sideCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.side === trade.side));
     els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.margin === trade.margin));
+    els.strategyCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.strategy === state.currentStrategy));
     els.editingBanner.textContent = `➗ ${trade.symbol} 포지션의 분할 청산을 추가하는 중입니다 (같은 포지션으로 묶여 승률에 1건으로 집계됩니다)`;
     els.editingBanner.hidden = false;
     els.cancelEditBtn.hidden = false;
@@ -974,9 +999,10 @@ function wireApp() {
     state.partialSourceId = null;
     els.form.reset();
     setToday();
-    state.currentSide = 'long'; state.currentMargin = 'cross';
+    state.currentSide = 'long'; state.currentMargin = 'cross'; state.currentStrategy = null;
     els.sideCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.side === 'long'));
     els.marginCtrl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.margin === 'cross'));
+    els.strategyCtrl.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
     els.leverageRange.value = 1; els.leverageInput.value = 1;
     els.editingBanner.hidden = true;
     els.cancelEditBtn.hidden = true;
@@ -1045,6 +1071,7 @@ function wireApp() {
       weight: parseFloat(els.weightInput.value),
       leverage: parseFloat(els.leverageInput.value),
       margin: state.currentMargin,
+      strategy: state.currentStrategy,
       fee_entry: parseFloat(els.feeEntryInput.value) || 0,
       fee_exit: parseFloat(els.feeExitInput.value) || 0,
       memo: (els.memoInput.value || '').trim(),

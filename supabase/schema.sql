@@ -15,6 +15,7 @@ create table if not exists public.trades (
   fee_entry numeric not null default 0 check (fee_entry >= 0),
   fee_exit numeric not null default 0 check (fee_exit >= 0),
   position_group uuid null,
+  strategy text null check (strategy is null or strategy in ('trend', 'counter')),
   memo text default '',
   created_at timestamptz not null default now()
 );

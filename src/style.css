@@ -145,6 +145,7 @@ button { font-family: inherit; }
 .segctrl button.active[data-side="long"] { background: var(--good-soft); border-color: var(--good); color: var(--good); }
 .segctrl button.active[data-side="short"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
 .segctrl button.active[data-margin] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.segctrl button.active[data-strategy] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 
 .leverage-row { display: flex; align-items: center; gap: 10px; }
 .leverage-row input[type="range"] { flex: 1; accent-color: var(--accent); }
@@ -172,6 +173,7 @@ tbody tr:last-child td { border-bottom: none; }
 .pill.short { background: var(--bad-soft); color: var(--bad); }
 .pill.margin { background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border); }
 .pill.group-badge { background: var(--accent-soft); color: var(--accent-ink); font-size: 10px; padding: 1px 6px; margin-left: 2px; cursor: default; }
+.pill.strategy-badge { font-size: 10px; padding: 1px 6px; margin-top: 3px; }
 .num.good { color: var(--good); }
 .num.bad { color: var(--bad); }
 .del-btn { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-family: var(--font-body); font-size: 11px; border-radius: 6px; padding: 5px 8px; cursor: pointer; }
