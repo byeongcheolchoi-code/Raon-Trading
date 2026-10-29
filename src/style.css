@@ -91,6 +91,16 @@ button { font-family: inherit; }
 .stat-value.good { color: var(--good); }
 .stat-value.bad { color: var(--bad); }
 
+.breakdown-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
+.breakdown-card h2 { font-size: 15.5px; margin-bottom: 10px; }
+.breakdown-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.breakdown-tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.breakdown-label { font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: 0.02em; }
+.breakdown-value { font-family: var(--font-mono); font-size: 19px; font-weight: 600; margin-top: 4px; line-height: 1.1; }
+.breakdown-sub { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+.breakdown-value.good { color: var(--good); }
+.breakdown-value.bad { color: var(--bad); }
+
 .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
 .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .chart-head h2 { font-size: 15.5px; }

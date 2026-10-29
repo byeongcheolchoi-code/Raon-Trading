@@ -225,6 +225,32 @@ function renderApp() {
       <div class="stat-tile"><div class="stat-label">총 거래</div><div class="stat-value" id="statTotal">0</div><div class="stat-sub" id="statTotalSub">승 0 · 패 0</div></div>
     </section>
 
+    <section class="breakdown-card">
+      <h2>유형별 승률</h2>
+      <div class="breakdown-grid">
+        <div class="breakdown-tile">
+          <div class="breakdown-label">롱</div>
+          <div class="breakdown-value" id="bdLongRate">—</div>
+          <div class="breakdown-sub" id="bdLongSub">거래 없음</div>
+        </div>
+        <div class="breakdown-tile">
+          <div class="breakdown-label">숏</div>
+          <div class="breakdown-value" id="bdShortRate">—</div>
+          <div class="breakdown-sub" id="bdShortSub">거래 없음</div>
+        </div>
+        <div class="breakdown-tile">
+          <div class="breakdown-label">추세매매</div>
+          <div class="breakdown-value" id="bdTrendRate">—</div>
+          <div class="breakdown-sub" id="bdTrendSub">거래 없음</div>
+        </div>
+        <div class="breakdown-tile">
+          <div class="breakdown-label">역추세매매</div>
+          <div class="breakdown-value" id="bdCounterRate">—</div>
+          <div class="breakdown-sub" id="bdCounterSub">거래 없음</div>
+        </div>
+      </div>
+    </section>
+
     <section class="chart-card">
       <div class="chart-head"><h2>누적 손익</h2><span class="chart-sub" id="chartRange">거래 없음</span></div>
       <div class="chart-wrap">
@@ -343,6 +369,14 @@ function wireApp() {
     statPnlAmountSub: document.getElementById('statPnlAmountSub'),
     statTotal: document.getElementById('statTotal'),
     statTotalSub: document.getElementById('statTotalSub'),
+    bdLongRate: document.getElementById('bdLongRate'),
+    bdLongSub: document.getElementById('bdLongSub'),
+    bdShortRate: document.getElementById('bdShortRate'),
+    bdShortSub: document.getElementById('bdShortSub'),
+    bdTrendRate: document.getElementById('bdTrendRate'),
+    bdTrendSub: document.getElementById('bdTrendSub'),
+    bdCounterRate: document.getElementById('bdCounterRate'),
+    bdCounterSub: document.getElementById('bdCounterSub'),
     chartRange: document.getElementById('chartRange'),
     chartEmpty: document.getElementById('chartEmpty'),
     svg: document.getElementById('pnlChart'),
@@ -645,6 +679,29 @@ function wireApp() {
     els.statTotalSub.textContent = `승 ${s.wins} · 패 ${s.losses}`;
   }
 
+  function renderBreakdown() {
+    const periodTrades = getPeriodTrades();
+    const categories = [
+      { filterFn: (t) => t.side === 'long', valueEl: els.bdLongRate, subEl: els.bdLongSub },
+      { filterFn: (t) => t.side === 'short', valueEl: els.bdShortRate, subEl: els.bdShortSub },
+      { filterFn: (t) => t.strategy === 'trend', valueEl: els.bdTrendRate, subEl: els.bdTrendSub },
+      { filterFn: (t) => t.strategy === 'counter', valueEl: els.bdCounterRate, subEl: els.bdCounterSub },
+    ];
+    categories.forEach(({ filterFn, valueEl, subEl }) => {
+      const subset = periodTrades.filter(filterFn);
+      const s = computeStats(subset, state.capital, state.usdKrwRate);
+      if (!s) {
+        valueEl.textContent = '—';
+        valueEl.className = 'breakdown-value';
+        subEl.textContent = '거래 없음';
+        return;
+      }
+      valueEl.textContent = (s.winRate * 100).toFixed(1) + '%';
+      valueEl.className = 'breakdown-value ' + (s.winRate >= 0.5 ? 'good' : 'bad');
+      subEl.textContent = `${s.wins}승 ${s.losses}패 (${s.total}건)`;
+    });
+  }
+
   els.periodPills.addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-period]');
     if (!btn) return;
@@ -665,11 +722,12 @@ function wireApp() {
       els.periodCustomRange.hidden = true;
     }
     renderStats();
+    renderBreakdown();
     renderChart();
     renderDailyChart();
   });
-  els.periodFromInput.addEventListener('change', () => { state.periodFrom = els.periodFromInput.value; renderStats(); renderChart(); renderDailyChart(); });
-  els.periodToInput.addEventListener('change', () => { state.periodTo = els.periodToInput.value; renderStats(); renderChart(); renderDailyChart(); });
+  els.periodFromInput.addEventListener('change', () => { state.periodFrom = els.periodFromInput.value; renderStats(); renderBreakdown(); renderChart(); renderDailyChart(); });
+  els.periodToInput.addEventListener('change', () => { state.periodTo = els.periodToInput.value; renderStats(); renderBreakdown(); renderChart(); renderDailyChart(); });
 
   function renderChart() {
     const asc = sortedAsc(getPeriodTrades());
@@ -1032,7 +1090,7 @@ function wireApp() {
     }
   }
 
-  function renderAll() { renderStats(); renderChart(); renderDailyChart(); renderTable(); renderWatchlist(); updatePreview(); }
+  function renderAll() { renderStats(); renderBreakdown(); renderChart(); renderDailyChart(); renderTable(); renderWatchlist(); updatePreview(); }
 
   function formatCapitalDisplay() {
     els.capitalInput.value = state.capital.toLocaleString('ko-KR');
